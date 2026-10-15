@@ -1,75 +1,87 @@
 """All constants centralized here."""
 
 APP_NAME = "Monthly Student Attendance Report"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.2.0"
 
-# ─────── Column auto-detection candidates ───────
+# ─────── Column auto-detection candidates (ordered by priority) ───────
 CLASS_COLUMN_CANDIDATES = [
-    "Class", "class", "CLASS", "班级", "班級",
-    "子表单.Class", "Student Class", "StudentClass",
+    "子表单.Class", "子表單.Class",   # ⭐ sub-form (matches students 1-to-1)
+    "Student Class", "StudentClass",
+    "Class", "class", "CLASS",
+    "班级", "班級",
 ]
 STATUS_COLUMN_CANDIDATES = [
-    "Status", "status", "Attendance Status", "下拉选择框",
-    "出勤状态", "出勤狀態", "Attendance Type", "Type",
+    "Attendance",                     # ⭐ real attendance status
+    "Attendance Status", "Attendance Type",
+    "出勤状态", "出勤狀態",
+    "Status", "status",               # last-resort fallback
+    "下拉选择框", "Type",
 ]
 DATETIME_COLUMN_CANDIDATES = [
+    "Record Date", "record date", "RecordDate",   # ⭐ true attendance date
     "Date Time", "DateTime", "日期时间", "日期時間",
+    "Date",
     "Submitted Time", "Submission Date", "提交时间", "提交時間",
     "Created Time", "Created At", "Timestamp",
 ]
 STUDENT_COLUMN_CANDIDATES = [
-    "Student", "Student Name", "Name", "子表单.Student",
-    "子表单.Name", "学生姓名", "學生姓名", "Students",
+    "子表单.Student", "子表單.Student",   # ⭐ sub-form student (preferred)
+    "子表单.Name",    "子表單.Name",
+    "Student", "Student Name", "Name",
+    "学生姓名", "學生姓名", "Students",
 ]
 
 # ─────── Status mapping (raw text → standard code) ───────
 STATUS_MAPPING = {
-    "present": "P", "attended": "P", "on time": "P",
+    "present": "P", "attended": "P", "on time": "P", "signed in": "P",
     "casual leave": "CL", "cl": "CL", "personal leave": "CL",
     "sick leave": "SL", "sl": "SL", "sick": "SL",
     "late": "L", "tardy": "L", "l": "L",
     "early leave": "EL", "el": "EL", "left early": "EL",
     "absent": "A", "a": "A",
-    "holiday": "H", "h": "H", "school holiday": "H", "public holiday": "H",
-    "typhoon closure": "TC", "tc": "TC", "typhoon": "TC",
+    "holiday": "H", "h": "H",
+    "typhoon closure": "TC", "tc": "TC",
     "school closure": "SC", "sc": "SC",
     "weekend": "WE", "we": "WE",
-    "missing": "M", "missing record": "M",
-    "出席": "P", "準時": "P", "准时": "P",
+    "出席": "P", "準時": "P", "准时": "P", "签到": "P", "簽到": "P",
     "事假": "CL", "病假": "SL",
     "迟到": "L", "遲到": "L",
     "早退": "EL", "缺席": "A", "缺勤": "A",
-    "放假": "H", "学校假期": "H", "學校假期": "H",
-    "台风停课": "TC", "颱風停課": "TC",
-    "學校停課": "SC", "学校停课": "SC",
 }
 
-# ─────── Status display ───────
+# ─────── Status priority (higher wins when same day has multiple records) ───────
+STATUS_PRIORITY = {
+    "SL": 5, "CL": 4, "EL": 3, "L":  2, "P":  1, "A":  0, "M":  0,
+}
+
+# ─────── Status display info ───────
 STATUS_INFO = {
-    "P":  {"label": "Present",         "color": "E8F5E9", "font_color": "000000"},
-    "L":  {"label": "Late",            "color": "FFF59D", "font_color": "000000"},
-    "EL": {"label": "Early Leave",     "color": "FFCC80", "font_color": "000000"},
-    "CL": {"label": "Casual Leave",    "color": "BBDEFB", "font_color": "000000"},
-    "SL": {"label": "Sick Leave",      "color": "90CAF9", "font_color": "000000"},
-    "A":  {"label": "Absent",          "color": "EF9A9A", "font_color": "000000"},
-    "H":  {"label": "Holiday",         "color": "A5D6A7", "font_color": "000000"},
-    "TC": {"label": "Typhoon Closure", "color": "FFAB91", "font_color": "000000"},
-    "SC": {"label": "School Closure",  "color": "FFAB91", "font_color": "000000"},
-    "WE": {"label": "Weekend",         "color": "E0E0E0", "font_color": "666666"},
-    "M":  {"label": "Missing Record",  "color": "CE93D8", "font_color": "000000"},
+    "P":  {"label": "Present",         "color": "C8E6C9", "font_color": "000000", "show_text": True},
+    "L":  {"label": "Late",            "color": "FFF59D", "font_color": "000000", "show_text": True},
+    "EL": {"label": "Early Leave",     "color": "FFCC80", "font_color": "000000", "show_text": True},
+    "CL": {"label": "Casual Leave",    "color": "BBDEFB", "font_color": "000000", "show_text": True},
+    "SL": {"label": "Sick Leave",      "color": "90CAF9", "font_color": "000000", "show_text": True},
+    "H":  {"label": "Holiday",         "color": "A5D6A7", "font_color": "000000", "show_text": False},
+    "TC": {"label": "Typhoon Closure", "color": "FFAB91", "font_color": "000000", "show_text": False},
+    "SC": {"label": "School Closure",  "color": "EF9A9A", "font_color": "000000", "show_text": False},
+    "WE": {"label": "Weekend",         "color": "E0E0E0", "font_color": "666666", "show_text": False},
+    "A":  {"label": "Absent",          "color": None,     "font_color": "000000", "show_text": False},
+    "M":  {"label": "Missing Record",  "color": None,     "font_color": "000000", "show_text": False},
 }
 
-# ─────── Calendar event type → status code ───────
-CALENDAR_EVENT_MAPPING = {
-    "normal school day": None,
-    "public holiday": "H", "school holiday": "H",
-    "half-term break": "H", "term break": "H",
-    "typhoon closure": "TC", "school closure": "SC",
-    "examination day": None, "school activity": None,
-    "weekend": "WE",
-    "公众假期": "H", "公眾假期": "H",
+# ─────── Simplified calendar event type → status code ───────
+CALENDAR_TYPE_MAPPING = {
+    "holiday": "H", "public holiday": "H", "school holiday": "H",
+    "term break": "H", "half-term break": "H", "half term break": "H",
+    "break": "H",
+    "typhoon": "TC", "typhoon closure": "TC",
+    "closure": "SC", "school closure": "SC",
+    "假期": "H", "公众假期": "H", "公眾假期": "H",
     "学校假期": "H", "學校假期": "H",
+    "学期假期": "H", "學期假期": "H",
+    "台风": "TC", "颱風": "TC",
     "台风停课": "TC", "颱風停課": "TC",
+    "停课": "SC", "停課": "SC",
 }
 
 # ─────── Statistics rules ───────

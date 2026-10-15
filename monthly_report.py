@@ -1,11 +1,12 @@
 """Build the monthly student×date matrix and statistics."""
 from datetime import date
 from config import (
-    ORDER_FIRST_APPEARANCE, ORDER_ALPHABETICAL,
+    ORDER_ALPHABETICAL,
     STATUSES_COUNTED_AS_PRESENT, STATUSES_AS_SCHOOL_DAY,
 )
 from calendar_processor import get_date_status
 from utils import days_in_month
+
 
 def extract_students(norm_df, year, month, selected_class, order):
     if norm_df.empty: return []
@@ -21,6 +22,7 @@ def extract_students(norm_df, year, month, selected_class, order):
         if name not in seen:
             seen.add(name); result.append(name)
     return result
+
 
 def build_matrix(norm_df, year, month, selected_class, students, calendar_dict):
     n_days = days_in_month(year, month)
@@ -73,6 +75,7 @@ def build_matrix(norm_df, year, month, selected_class, students, calendar_dict):
         }
     return matrix, day_info, stats
 
+
 def summary_counts(day_info):
     return {
         "school_days": sum(1 for d in day_info if d["is_school_day"]),
@@ -81,3 +84,53 @@ def summary_counts(day_info):
         "typhoons":    sum(1 for d in day_info if d["code"] == "TC"),
         "closures":    sum(1 for d in day_info if d["code"] == "SC"),
     }
+
+
+# ⭐ NEW: build data for ALL classes at once
+def build_all_classes_data(norm_df, year, month, calendar_dict, order):
+    """
+    Returns:
+        all_students: list of (student_name, class) tuples in display order
+        matrices:     dict {(name, class) -> {day: {code, display}}}
+        stats:        dict {(name, class) -> stat_dict}
+        day_info:     list of day descriptors (same across all students)
+    """
+    all_students = []
+    matrices = {}
+    stats_all = {}
+    day_info = None
+
+    if not norm_df.empty:
+        classes = sorted(norm_df["Class"].unique().tolist())
+        for cls in classes:
+            students = extract_students(norm_df, year, month, cls, order)
+            if not students:
+                continue
+            matrix, day_info_this, class_stats = build_matrix(
+                norm_df, year, month, cls, students, calendar_dict
+            )
+            if day_info is None:
+                day_info = day_info_this
+            for stu in students:
+                key = (stu, cls)
+                all_students.append(key)
+                matrices[key] = matrix[stu]
+                stats_all[key] = class_stats[stu]
+
+    # Fallback: build empty day_info if no students
+    if day_info is None:
+        n_days = days_in_month(year, month)
+        day_info = []
+        for day in range(1, n_days + 1):
+            d = date(year, month, day)
+            wd = d.weekday()
+            code, display, is_school = get_date_status(d, calendar_dict)
+            day_info.append({
+                "day": day, "date": d, "weekday": wd,
+                "weekday_name": ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"][wd],
+                "is_school_day": is_school,
+                "code": code if code else ("" if is_school else "H"),
+                "display": display or "",
+            })
+
+    return all_students, matrices, stats_all, day_info

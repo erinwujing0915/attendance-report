@@ -1,10 +1,23 @@
-"""Load and query school calendar."""
+"""Load and query school calendar (new simplified format)."""
 import pandas as pd
 from datetime import date
-from config import CALENDAR_EVENT_MAPPING
+from config import CALENDAR_TYPE_MAPPING
 from utils import parse_date_value, safe_str
 
 def load_calendar(path):
+    """
+    New simplified calendar format:
+        | Date | Type | Name |
+
+    Type (case-insensitive):
+      - Holiday / Public Holiday / School Holiday  → H
+      - Term Break / Half-Term Break               → H
+      - Typhoon / Typhoon Closure                  → TC
+      - Closure / School Closure                   → SC
+
+    Backward compatible with old format
+    (Event Type / Is School Day / Display Text columns).
+    """
     errors = []
     if not path: return {}, errors
     try:
@@ -16,11 +29,11 @@ def load_calendar(path):
         return {}, errors
 
     cols = {str(c).lower().strip(): c for c in df.columns if isinstance(c, str)}
-    date_col    = cols.get("date") or list(df.columns)[0]
-    type_col    = cols.get("event type") or cols.get("type")
-    isday_col   = cols.get("is school day")
-    display_col = cols.get("display text")
-    color_col   = cols.get("colour") or cols.get("color")
+    date_col = cols.get("date") or list(df.columns)[0]
+    type_col = cols.get("type") or cols.get("event type")
+    name_col = (cols.get("name") or cols.get("display text")
+                or cols.get("display") or cols.get("description"))
+    isday_col = cols.get("is school day")  # legacy
 
     cal = {}
     for i, row in df.iterrows():
@@ -33,23 +46,32 @@ def load_calendar(path):
             continue
 
         etype = safe_str(row.get(type_col)) if type_col else ""
-        code  = CALENDAR_EVENT_MAPPING.get(etype.lower(), None)
+        name  = safe_str(row.get(name_col)) if name_col else ""
 
+        key = etype.lower().strip()
+        if key in CALENDAR_TYPE_MAPPING:
+            code = CALENDAR_TYPE_MAPPING[key]
+            is_school = False
+        elif not key:
+            # No type given, assume generic holiday
+            code = "H"; is_school = False
+        else:
+            # Unknown type, assume holiday
+            code = "H"; is_school = False
+            errors.append({"source_row": src_row, "type": "UnknownCalendarType",
+                "student": "", "class": "", "date": str(d),
+                "message": f"Unknown calendar Type: '{etype}' (treated as Holiday)",
+                "details": "Supported: Holiday / Term Break / Typhoon / Closure"})
+
+        # Legacy "Is School Day" column overrides
         if isday_col:
             v = safe_str(row.get(isday_col)).lower()
-            if v == "":
-                is_school = code is None
-            elif v in ("yes", "true", "1", "是"):
+            if v in ("yes", "true", "1", "是"):
                 is_school = True
             elif v in ("no", "false", "0", "否"):
                 is_school = False
-            else:
-                is_school = code is None
-        else:
-            is_school = code is None
 
-        display = safe_str(row.get(display_col)) if display_col else etype
-        color   = safe_str(row.get(color_col)) if color_col else ""
+        display = name or etype or "Holiday"
 
         if d in cal:
             errors.append({"source_row": src_row, "type": "DuplicateCalendarDate",
@@ -59,14 +81,17 @@ def load_calendar(path):
             continue
 
         cal[d] = {
-            "event_type":    etype, "code": code,
-            "is_school_day": is_school, "display": display or etype,
-            "color":         color,
+            "event_type":    etype,
+            "code":          code,
+            "is_school_day": is_school,
+            "display":       display,
         }
     return cal, errors
 
+
 def get_date_status(day: date, calendar: dict):
-    if day.weekday() >= 5:
+    """Returns (code, display, is_school_day)."""
+    if day.weekday() >= 5:  # Saturday / Sunday
         if day in calendar and calendar[day]["is_school_day"]:
             return (None, None, True)
         if day in calendar:

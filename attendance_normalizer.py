@@ -1,7 +1,7 @@
 """Split multi-student rows and normalize data."""
 import re
 import pandas as pd
-from config import STATUS_MAPPING, STUDENT_SPLIT_PATTERN
+from config import STATUS_MAPPING, STUDENT_SPLIT_PATTERN, STATUS_PRIORITY
 from utils import safe_str, normalize_whitespace, parse_date_value, parse_datetime_value
 
 def split_cell(s: str):
@@ -95,24 +95,54 @@ def normalize_dataframe(df, mapping):
     norm_df = pd.DataFrame(records)
     return norm_df, errors
 
-def find_conflicts(norm_df):
-    conflicts = []
-    if norm_df.empty: return conflicts
-    grp = norm_df.groupby(["Student Name", "Class", "Attendance Date"])
+
+def resolve_duplicates_by_priority(norm_df):
+    """
+    When same (student, class, date) has multiple records,
+    keep the one with highest priority (per STATUS_PRIORITY).
+    e.g., Present + Sick Leave on same day → Sick Leave wins.
+
+    Returns (resolved_df, resolution_log)
+    """
+    if norm_df.empty:
+        return norm_df, []
+
+    df = norm_df.copy()
+    df["__pri__"] = df["Status"].map(lambda s: STATUS_PRIORITY.get(s, 0))
+
+    # Build resolution log for cases that actually had different statuses
+    resolution_log = []
+    grp = df.groupby(["Student Name", "Class", "Attendance Date"])
     for (name, cls, dt), g in grp:
-        statuses = sorted(g["Status"].unique().tolist())
+        statuses = sorted(set(g["Status"].tolist()))
         if len(statuses) > 1:
-            rows = g["Source Row"].tolist()
-            conflicts.append({
-                "source_row": ",".join(map(str, rows)),
-                "type":       "StatusConflict",
-                "student":    name, "class": cls, "date": str(dt),
-                "message":    f"Multiple different statuses on same day: {statuses}",
-                "details":    f"Source rows: {rows}",
+            best = g.sort_values("__pri__", ascending=False).iloc[0]
+            resolution_log.append({
+                "student":      name,
+                "class":        cls,
+                "date":         str(dt),
+                "all_statuses": statuses,
+                "chosen":       best["Status"],
+                "source_rows":  g["Source Row"].tolist(),
+                "message": (f"{name} ({cls}) on {dt}: "
+                            f"had {statuses} → kept {best['Status']}"),
             })
-    return conflicts
+
+    # Sort so highest priority is first, then drop duplicates keeping first
+    df_sorted = df.sort_values(
+        ["Student Name", "Class", "Attendance Date", "__pri__"],
+        ascending=[True, True, True, False]
+    )
+    resolved = df_sorted.drop_duplicates(
+        subset=["Student Name", "Class", "Attendance Date"],
+        keep="first"
+    ).drop(columns="__pri__").reset_index(drop=True)
+
+    return resolved, resolution_log
+
 
 def deduplicate(norm_df):
+    """Simple duplicate removal (same student/class/date/status)."""
     if norm_df.empty: return norm_df
     return norm_df.drop_duplicates(
         subset=["Student Name", "Class", "Attendance Date", "Status"]
