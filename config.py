@@ -1,31 +1,31 @@
 """All constants centralized here."""
 
 APP_NAME = "Monthly Student Attendance Report"
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.3.1"
 
-# ─────── Column auto-detection candidates (ordered by priority) ───────
+# ─────── Column auto-detection candidates ───────
 CLASS_COLUMN_CANDIDATES = [
-    "子表单.Class", "子表單.Class",   # ⭐ sub-form (matches students 1-to-1)
+    "子表单.Class", "子表單.Class",
     "Student Class", "StudentClass",
     "Class", "class", "CLASS",
     "班级", "班級",
 ]
 STATUS_COLUMN_CANDIDATES = [
-    "Attendance",                     # ⭐ real attendance status
+    "Attendance",
     "Attendance Status", "Attendance Type",
     "出勤状态", "出勤狀態",
-    "Status", "status",               # last-resort fallback
+    "Status", "status",
     "下拉选择框", "Type",
 ]
 DATETIME_COLUMN_CANDIDATES = [
-    "Record Date", "record date", "RecordDate",   # ⭐ true attendance date
+    "Record Date", "record date", "RecordDate",
     "Date Time", "DateTime", "日期时间", "日期時間",
     "Date",
     "Submitted Time", "Submission Date", "提交时间", "提交時間",
     "Created Time", "Created At", "Timestamp",
 ]
 STUDENT_COLUMN_CANDIDATES = [
-    "子表单.Student", "子表單.Student",   # ⭐ sub-form student (preferred)
+    "子表单.Student", "子表單.Student",
     "子表单.Name",    "子表單.Name",
     "Student", "Student Name", "Name",
     "学生姓名", "學生姓名", "Students",
@@ -51,17 +51,24 @@ STATUS_MAPPING = {
 
 # ─────── Status priority (higher wins when same day has multiple records) ───────
 STATUS_PRIORITY = {
-    "SL": 5, "CL": 4, "EL": 3, "L":  2, "P":  1, "A":  0, "M":  0,
+    "SL": 5, "CL": 4, "EL": 3, "L": 2, "P": 1, "A": 0, "M": 0,
 }
 
 # ─────── Status display info ───────
+# 🎨 Color scheme:
+#   • GREEN  tones → Present (attendance)
+#   • YELLOW/ORANGE tones → Late / Early Leave
+#   • BLUE tones → Casual Leave / Sick Leave
+#   • WARM (pink/orange/red) tones → Holiday / Typhoon / Closure (non-school days)
+#   • GRAY → Weekend
 STATUS_INFO = {
     "P":  {"label": "Present",         "color": "C8E6C9", "font_color": "000000", "show_text": True},
     "L":  {"label": "Late",            "color": "FFF59D", "font_color": "000000", "show_text": True},
     "EL": {"label": "Early Leave",     "color": "FFCC80", "font_color": "000000", "show_text": True},
     "CL": {"label": "Casual Leave",    "color": "BBDEFB", "font_color": "000000", "show_text": True},
     "SL": {"label": "Sick Leave",      "color": "90CAF9", "font_color": "000000", "show_text": True},
-    "H":  {"label": "Holiday",         "color": "A5D6A7", "font_color": "000000", "show_text": False},
+    # ⭐ Holiday now in the warm/orange family (close to Typhoon Closure)
+    "H":  {"label": "Holiday",         "color": "FFCCBC", "font_color": "000000", "show_text": False},
     "TC": {"label": "Typhoon Closure", "color": "FFAB91", "font_color": "000000", "show_text": False},
     "SC": {"label": "School Closure",  "color": "EF9A9A", "font_color": "000000", "show_text": False},
     "WE": {"label": "Weekend",         "color": "E0E0E0", "font_color": "666666", "show_text": False},
@@ -88,6 +95,17 @@ CALENDAR_TYPE_MAPPING = {
 STATUSES_COUNTED_AS_PRESENT = {"P", "L", "EL"}
 STATUSES_AS_SCHOOL_DAY       = {"P", "L", "EL", "CL", "SL", "A", "M"}
 STATUSES_NON_SCHOOL          = {"H", "TC", "SC", "WE"}
+
+# ⭐ Extra student info columns shown on the left of the report.
+#    (Source Excel does not provide these; they stay blank for manual filling.)
+#    Edit this list to add/remove columns.
+STUDENT_INFO_FIELDS = [
+    "Date of Birth",
+    "Gender",
+    "The first day of school",
+    "Date of Withdrawal",
+    "Remarks",
+]
 
 ORDER_FIRST_APPEARANCE = "First Appearance Order"
 ORDER_ALPHABETICAL     = "Alphabetical Order"
