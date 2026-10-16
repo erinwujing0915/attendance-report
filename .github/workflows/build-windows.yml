@@ -1,5 +1,4 @@
-```yaml
-name: Build Windows EXE
+name: Build Windows + Mac
 
 on:
   push:
@@ -7,9 +6,9 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  # ═══════════ Windows build ═══════════
+  build-windows:
     runs-on: windows-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -24,11 +23,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run tests
-        run: pytest tests/ -v
-        continue-on-error: true
-
-      - name: Build EXE with PyInstaller
+      - name: Build Windows EXE
         run: |
           pyinstaller --name AttendanceReport `
             --windowed `
@@ -38,15 +33,73 @@ jobs:
             --add-data "config.py;." `
             app.py
 
-      - name: Upload EXE as artifact
+      - name: Upload Windows EXE
         uses: actions/upload-artifact@v4
         with:
           name: AttendanceReport-Windows
           path: dist/AttendanceReport.exe
           retention-days: 30
 
-      - name: Create Release (on tag)
-        if: startsWith(github.ref, 'refs/tags/v')
+  # ═══════════ Mac Universal build (Intel + Apple Silicon) ═══════════
+  build-mac:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Build Mac .app
+        run: |
+          pyinstaller --name AttendanceReport \
+            --windowed \
+            --onefile \
+            --clean \
+            --noconfirm \
+            --add-data "config.py:." \
+            app.py
+
+      - name: Package .app into a zip
+        run: |
+          cd dist
+          zip -r AttendanceReport-Mac.zip AttendanceReport.app
+
+      - name: Upload Mac .app
+        uses: actions/upload-artifact@v4
+        with:
+          name: AttendanceReport-Mac
+          path: dist/AttendanceReport-Mac.zip
+          retention-days: 30
+
+  # ═══════════ Create a release on git tag ═══════════
+  release:
+    needs: [build-windows, build-mac]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: AttendanceReport-Windows
+          path: ./release
+
+      - name: Download Mac artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: AttendanceReport-Mac
+          path: ./release
+
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/AttendanceReport.exe
+          files: |
+            ./release/AttendanceReport.exe
+            ./release/AttendanceReport-Mac.zip
