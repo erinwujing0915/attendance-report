@@ -1,5 +1,7 @@
-"""Simplified one-click GUI."""
+"""Simplified one-click GUI with robust error handling."""
 import os
+import sys
+import traceback
 from pathlib import Path
 from datetime import datetime
 import tkinter as tk
@@ -7,7 +9,7 @@ from tkinter import ttk, filedialog, messagebox, scrolledtext
 
 import pandas as pd
 
-from config import (APP_NAME, MONTH_NAMES, DEFAULT_OUTPUT_DIR,
+from config import (APP_NAME, MONTH_NAMES,
                     ORDER_FIRST_APPEARANCE, ORDER_ALPHABETICAL)
 from file_loader import load_excel
 from column_mapper import (
@@ -21,7 +23,7 @@ from data_validator import validate_month_class_filter, has_blocking_errors
 from monthly_report import build_all_classes_data, summary_counts
 from excel_formatter import write_monthly_report_all, write_normalized
 from error_report import write_error_report
-from utils import app_dir, open_file
+from utils import default_output_dir, open_file
 
 NOTE_ZH = ("⚠ 学生名单由出勤记录自动生成；整月无记录的学生不会显示。"
            "同一天的 Present 会被请假类型（SL/CL/EL）自动覆盖。")
@@ -39,7 +41,8 @@ class App(tk.Tk):
         self.year_var  = tk.StringVar(value=str(datetime.now().year))
         self.month_var = tk.StringVar(value=MONTH_NAMES[datetime.now().month])
         self.order_var = tk.StringVar(value=ORDER_FIRST_APPEARANCE)
-        self.output_dir = tk.StringVar(value=str(app_dir() / DEFAULT_OUTPUT_DIR))
+        # ⭐ Writable default output path
+        self.output_dir = tk.StringVar(value=str(default_output_dir()))
 
         self.raw_df = None
         self.norm_df = None
@@ -51,24 +54,20 @@ class App(tk.Tk):
         self._build()
 
     def _build(self):
-        # Header
         hdr = tk.Frame(self, bg="#1976D2", height=50); hdr.pack(fill="x")
         tk.Label(hdr, text=APP_NAME, bg="#1976D2", fg="white",
                  font=("Helvetica", 14, "bold")).pack(side="left", padx=12, pady=10)
 
-        # Notice
         note = tk.Frame(self, bg="#FFF3CD"); note.pack(fill="x")
         tk.Label(note, text=NOTE_ZH, bg="#FFF3CD", fg="#856404",
                  wraplength=840, justify="left", font=("Helvetica", 9)
                  ).pack(anchor="w", padx=8, pady=4)
 
-        # Section 1: Files
         f1 = ttk.LabelFrame(self, text="📁 Input Files")
         f1.pack(fill="x", padx=8, pady=4)
-        self._file_row(f1, "Attendance Excel:",        self.attendance_path, self._browse_attendance, 0)
+        self._file_row(f1, "Attendance Excel:",           self.attendance_path, self._browse_attendance, 0)
         self._file_row(f1, "School Calendar (optional):", self.calendar_path, self._browse_calendar, 1)
 
-        # Section 2: Parameters
         f2 = ttk.LabelFrame(self, text="⚙️ Report Parameters")
         f2.pack(fill="x", padx=8, pady=4)
         tk.Label(f2, text="Year:").grid(row=0, column=0, sticky="w", padx=6, pady=6)
@@ -91,7 +90,6 @@ class App(tk.Tk):
         for c in range(6):
             f2.grid_columnconfigure(c, weight=1 if c in (1, 3) else 0)
 
-        # ─── Main action ───
         f3 = tk.Frame(self); f3.pack(fill="x", padx=8, pady=12)
         tk.Button(f3, text="🚀  Generate Monthly Report",
                   command=self.generate_report,
@@ -106,14 +104,12 @@ class App(tk.Tk):
                    command=self.show_advanced).pack(side="left", padx=4)
         ttk.Button(f3, text="Exit", command=self.destroy).pack(side="right", padx=4)
 
-        # Log
         f4 = ttk.LabelFrame(self, text="📋 Log")
         f4.pack(fill="both", expand=True, padx=8, pady=4)
         self.log = scrolledtext.ScrolledText(f4, height=14, font=("Menlo", 10))
         self.log.pack(fill="both", expand=True, padx=4, pady=4)
         self._log("Welcome. Select files above and click 🚀 Generate Monthly Report.")
 
-    # ───────────── helpers ─────────────
     def _file_row(self, parent, label, var, cmd, row):
         tk.Label(parent, text=label).grid(row=row, column=0, sticky="w", padx=6, pady=4)
         tk.Entry(parent, textvariable=var).grid(row=row, column=1, sticky="we", padx=6, pady=4)
@@ -130,7 +126,7 @@ class App(tk.Tk):
         p = filedialog.askopenfilename(filetypes=[("Excel", "*.xlsx *.xls")])
         if p: self.calendar_path.set(p)
     def _browse_output(self):
-        p = filedialog.askdirectory()
+        p = filedialog.askdirectory(initialdir=self.output_dir.get())
         if p: self.output_dir.set(p)
     def _log(self, msg):
         ts = datetime.now().strftime("%H:%M:%S")
@@ -139,17 +135,32 @@ class App(tk.Tk):
         self.update_idletasks()
 
     def open_output_folder(self):
-        p = Path(self.output_dir.get()); p.mkdir(parents=True, exist_ok=True)
-        try: open_file(p)
-        except Exception as e: messagebox.showerror("Error", str(e))
+        p = Path(self.output_dir.get())
+        try:
+            p.mkdir(parents=True, exist_ok=True)
+            open_file(p)
+        except Exception as e:
+            messagebox.showerror("Error", f"Cannot open folder:\n{e}")
 
     def show_advanced(self):
         AdvancedDialog(self)
 
     # ═════════════════════════════════════════════════════════
-    # 🚀 THE ONE-CLICK PIPELINE
+    # 🚀 One-click pipeline  (ALL wrapped in try/except)
     # ═════════════════════════════════════════════════════════
     def generate_report(self):
+        try:
+            self._generate_report_impl()
+        except Exception as e:
+            tb = traceback.format_exc()
+            self._log(f"❌ Unexpected error:\n{tb}")
+            messagebox.showerror(
+                "Unexpected Error",
+                f"{type(e).__name__}: {e}\n\n"
+                f"Please check the log for details. "
+                f"If the problem persists, contact the developer.")
+
+    def _generate_report_impl(self):
         # 1. Validate inputs
         path = self.attendance_path.get()
         if not path:
@@ -168,10 +179,10 @@ class App(tk.Tk):
         try:
             self.raw_df = load_excel(path)
         except Exception as e:
-            messagebox.showerror("Error", f"Cannot load Excel: {e}"); return
+            messagebox.showerror("Error", f"Cannot load Excel:\n{e}"); return
         self._log(f"   {len(self.raw_df)} raw records loaded")
 
-        # 3. Auto-detect columns (saved mapping only fills gaps)
+        # 3. Auto-detect columns
         detected = auto_detect_columns(self.raw_df)
         saved = load_saved_mapping()
         for k, v in saved.items():
@@ -197,29 +208,29 @@ class App(tk.Tk):
         for e in self.errors[:3]:
             self._log(f"      ❌ Row {e.get('source_row')}: {e.get('message')}")
         if len(self.errors) > 3:
-            self._log(f"      ... and {len(self.errors) - 3} more "
-                      f"(see error report)")
+            self._log(f"      ... and {len(self.errors) - 3} more")
 
         if self.norm_df.empty:
             messagebox.showerror("Error",
                 "No valid records could be normalized.\n\n"
-                "Check the log for details, then try ⚙️ Advanced → "
-                "Edit Column Mapping.")
+                "Check the log for details, then try ⚙️ Advanced → Edit Column Mapping.")
             return
 
         # 5. Dedup + priority resolution
         self.norm_df = deduplicate(self.norm_df)
         self.norm_df, resolution_log = resolve_duplicates_by_priority(self.norm_df)
         if resolution_log:
-            self._log(f"   🔄 Resolved {len(resolution_log)} status conflicts "
-                      f"(e.g., Present→SL)")
+            self._log(f"   🔄 Resolved {len(resolution_log)} status conflicts")
 
         # 6. Calendar
         if self.calendar_path.get():
-            self.calendar, cerr = load_calendar(self.calendar_path.get())
-            self._log(f"   📅 Calendar: {len(self.calendar)} dates "
-                      f"({len(cerr)} errors)")
-            self.errors.extend(cerr)
+            try:
+                self.calendar, cerr = load_calendar(self.calendar_path.get())
+                self._log(f"   📅 Calendar: {len(self.calendar)} dates ({len(cerr)} errors)")
+                self.errors.extend(cerr)
+            except Exception as e:
+                self._log(f"   ⚠ Calendar load failed: {e}")
+                self.calendar = {}
         else:
             self.calendar = {}
             self._log("   ⚠ No calendar — only weekends auto-recognized")
@@ -230,11 +241,25 @@ class App(tk.Tk):
         for w in self.warnings:
             self._log(f"   ⚠ {w['message']}")
 
-        # 8. Blocking error check
-        out_dir = Path(self.output_dir.get())
-        out_dir.mkdir(parents=True, exist_ok=True)
+        # 8. Output folder (make sure writable)
+        try:
+            out_dir = Path(self.output_dir.get())
+            out_dir.mkdir(parents=True, exist_ok=True)
+            # Writable test
+            testf = out_dir / ".write_test"
+            testf.write_text("x"); testf.unlink()
+        except Exception as e:
+            # Fallback to default
+            fallback = default_output_dir()
+            self._log(f"   ⚠ Cannot write to {self.output_dir.get()}: {e}")
+            self._log(f"   → Using default output folder: {fallback}")
+            self.output_dir.set(str(fallback))
+            out_dir = fallback
+            out_dir.mkdir(parents=True, exist_ok=True)
+
         month_name = MONTH_NAMES[month]
 
+        # 9. Blocking errors
         if has_blocking_errors(self.errors):
             err_path = out_dir / f"Attendance_Errors_{month_name}_{year}.xlsx"
             write_error_report(err_path, self.errors, self.warnings)
@@ -244,7 +269,7 @@ class App(tk.Tk):
             self._log(f"   ❌ Blocked — see {err_path.name}")
             return
 
-        # 9. Build all-class data
+        # 10. Build all-class data
         all_students, matrices, stats, day_info = build_all_classes_data(
             self.norm_df, year, month, self.calendar, self.order_var.get()
         )
@@ -255,17 +280,13 @@ class App(tk.Tk):
             return
         summary = summary_counts(day_info)
 
-        # 10. Write the ONE Excel
+        # 11. Write the ONE Excel
         out_path = out_dir / f"Monthly_Attendance_{month_name}_{year}.xlsx"
-        try:
-            write_monthly_report_all(
-                out_path, year, month,
-                all_students, matrices, stats, day_info, summary
-            )
-        except Exception as e:
-            messagebox.showerror("Error", f"Cannot write report: {e}"); return
+        write_monthly_report_all(
+            out_path, year, month,
+            all_students, matrices, stats, day_info, summary
+        )
 
-        # Also save normalized data + error log (silently)
         std_path = out_dir / f"Standardized_Attendance_{month_name}_{year}.xlsx"
         write_normalized(std_path, self.norm_df)
         if self.errors or self.warnings:
@@ -291,7 +312,7 @@ class App(tk.Tk):
 
 
 # ═══════════════════════════════════════════════════════════════════
-#  Advanced dialog (secondary tools)
+#  Advanced
 # ═══════════════════════════════════════════════════════════════════
 class AdvancedDialog(tk.Toplevel):
     def __init__(self, parent):
@@ -299,6 +320,7 @@ class AdvancedDialog(tk.Toplevel):
         self.title("⚙️ Advanced Options")
         self.parent = parent
         self.resizable(False, False)
+        self.lift(); self.focus_force()        # ⭐ force to front on Mac
         self.grab_set()
 
         tk.Label(self, text="Advanced tools",
@@ -318,9 +340,7 @@ class AdvancedDialog(tk.Toplevel):
 
     def _edit_mapping(self):
         if self.parent.raw_df is None:
-            messagebox.showerror("Error",
-                "Please click 🚀 Generate Monthly Report first "
-                "(so the data is loaded).")
+            messagebox.showerror("Error", "Please click 🚀 Generate Monthly Report first.")
             return
         current = (dict(self.parent.column_mapping)
                    if self.parent.column_mapping
@@ -345,8 +365,7 @@ class AdvancedDialog(tk.Toplevel):
 
     def _reset(self):
         if messagebox.askyesno("Reset Settings",
-                "Clear the saved column mapping?\n"
-                "Next time you generate a report, auto-detection will start fresh."):
+                "Clear the saved column mapping?"):
             clear_saved_mapping()
             self.parent._log("🧹 Saved settings cleared.")
 
@@ -360,6 +379,11 @@ class ColumnMappingDialog(tk.Toplevel):
         self.title("Column Mapping")
         self.result = None
         self.resizable(False, False)
+        # ⭐ Make dialog visible on Mac
+        self.lift()
+        self.attributes("-topmost", True)
+        self.after(100, lambda: self.attributes("-topmost", False))
+        self.focus_force()
         self.grab_set()
 
         tk.Label(self, text="Pick the correct column for each field.\n\n"
@@ -405,6 +429,7 @@ class PreviewDialog(tk.Toplevel):
     def __init__(self, parent, df):
         super().__init__(parent); self.title("Normalized Data Preview")
         self.geometry("1000x500"); self.df = df
+        self.lift(); self.focus_force()
         tk.Label(self, text=f"Showing {min(len(df), 500)} of {len(df)} records"
                  ).pack(anchor="w", padx=8, pady=4)
         cols = ["Student Name", "Class", "Attendance Date", "Status",
